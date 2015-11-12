@@ -7,6 +7,10 @@ output: html_document
 
 ```{r, echo=FALSE, results='hide'}
 suppressMessages(library(caret, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+suppressMessages(library(RWeka, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+suppressMessages(library(randomForest, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+suppressMessages(library(gbm, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+suppressMessages(library(plyr, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 ```
 
 ## 1. Problem Formulation
@@ -35,8 +39,7 @@ The following variables should not participate in the training. They do not infl
 - *new_window*, *num_window* - timeframes of different excercises.
 - *user_name* - name of tester. Unless the trained model will be used for the same users only, the username should not be taken into account when learning training patterns.
 ```{r}
-columnsToDrop <-c("raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","X","user_name","new_window",
-                   "num_window");
+columnsToDrop <-c("raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","X","user_name","new_window", "num_window");
 xLabeled <- xLabeled[, !(colnames(xLabeled) %in% columnsToDrop)]
 ```
 
@@ -66,11 +69,12 @@ There are `r dim(xLabeled)[1]` labeled examples available. It is relatively larg
 - 60% is randomly assigned to training set. It will be used to explore data and fit the models.
 - 20% is randomly assigned to testing set. Prediction accuracy on this set will be used to select the model and adjust model parameters if necessary.
 - Remaining 20% is assigned to validation set. Prediction accuracy on this set will be used to estimate out-of-sample error of the selected model.
+*NOTE:* Many sources call set for model selection "validation set" and set for final one-time estimation "testing set". Here we stick to the meaning proposed in Practical Machine Learning course.
 ```{r}
 dataPartitionTrain <- createDataPartition(xLabeled$classe, p = 0.6, list = F)
 xTrain <- xLabeled[dataPartitionTrain,]
 xTestAndVal <- xLabeled[-dataPartitionTrain,]
-# The rest 40% are divided 50/50 between test and vlaidation sets
+# The rest 40% are divided 50/50 between test and validation sets
 dataPartitionTestAndVal <- createDataPartition(xTestAndVal$classe, p = 0.5, list = F)
 xVal <- xTestAndVal[dataPartitionTestAndVal,]
 xTest <- xTestAndVal[-dataPartitionTestAndVal,]
@@ -80,7 +84,78 @@ Now the data are ready for applying machine learning algorithms.
 
 ## 3. Model Selection
 
-## 4. Summary
+<Evaluate several models>
+
+### 3.1. Naive Bayesian Model
+
+Naive Bayesian model relies on the assumption that distributions of predictor variables are independent given the class. For excercising this assumption is very likely to be inaccurate - within the same excercise movement of different parts of the body should have a lot of dependencies. However, still Naive Bayesian approach can be used as a benchmark to compare other models to.
+
+```{r}
+# Note: for some methods formula notation like "classe ~ ." slows down performance tremendously.
+ naiveBayesianModel <- train(classe ~ ., data = xTrain, method = "nb", preProcess = c("center", "scale"))
+#naiveBayesianModel <- train(classe~., data = xTrain, method = "nb", preProcess = c("center", "scale")) #Takes 30+ minutes
+
+# Training set performance
+#naiveBayesianTrainResults <- predict(naiveBayesianModel, xTrain)
+#confusionMatrix(naiveBayesianTrainResults, xTrain$classe)
+#Acc: ?% 
+
+# Cross-validation TODO val/test
+#naiveBayesianCVResults <- predict(naiveBayesianModel, xCrossVal)
+#confusionMatrix(naiveBayesianCVResults, xCrossVal$classe)
+#Acc: ?% 
+```
+
+### 3.2. Decision Trees
+
+Decision tree is practically vary efficient method, although somewhat prone to overfitting. Instead of "rpart" implementation, proposed by the course, we are going to use more fast and robust J48 algorithm for decision tree construction.
+
+```{r}
+decTreeModel <- train(classe~., data = xTrain, method = "J48")
+decTreeTrainResults <- predict(decTreeModel, xTrain)
+decTreeTestResults <- predict(decTreeModel, xTest)
+```
+Training set accuracy: `r round(confusionMatrix(decTreeTrainResults, xTrain$classe)$overall[1]*100, digits=2)`%
+
+Testing  set accuracy: `r round(confusionMatrix(decTreeTestResults, xTest$classe)$overall[1]*100, digits=2)`%
+
+TODO Any adjustments? ROC curves, etc.?
+
+### 3.3. Random Forests
+
+Random forest is one of the most widely used models in practice. It is robust and definitely worth trying.
+
+```{r}
+# Caret's adjustment for random forests will take many hours.
+# We are doing our own training/test/validation manually. So, we do not use built-in one training control from caret
+randomForestModel <- train(classe ~ ., data = xTrain, method = "rf", trControl = trainControl(method = "none"), tuneGrid=data.frame(mtry=10))
+randomForestTrainResults <- predict(randomForestModel, xTrain)
+randomForestTestResults <- predict(randomForestModel, xTest)
+```
+Training set accuracy: `r round(confusionMatrix(randomForestTrainResults, xTrain$classe)$overall[1]*100, digits=4)`%
+
+Testing  set accuracy: `r round(confusionMatrix(randomForestTestResults, xTest$classe)$overall[1]*100, digits=4)`%
+
+TODO Use ROC curves or other mesurements?
+
+### 3.4. Boosting with Trees
+
+Boosting is a very popular and practical approach for combining the prediction methods. It is definitely worth trying for pretty much any task. Here decision trees and random forests has shown good results, .
+
+```{r}
+# Does not work. To rework
+treeBoostModel <- train(classe ~ ., data = xTrain, method = "gbm")
+#treeBoostTrainResults <- predict(randomForestModel, xTrain)
+#treeBoostTestResults <- predict(randomForestModel, xTest)
+```
+
+### 3.4. TODO Logistic regression, SVM, some bagging/boosting
+
+## 4. Model Selection
+
+TODO Visualize somehow? E.g. TSNE
+
+## 5. Summary
 
 - The model was build using `r dim(xLabeled)[2]-1` predictor variables
 
