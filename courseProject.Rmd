@@ -6,16 +6,29 @@ output: html_document
 ---
 
 ```{r, echo=FALSE, results='hide'}
+# Let's silently load all the libraries, including the ones implicitly loaded later
 suppressMessages(library(caret, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 suppressMessages(library(RWeka, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 suppressMessages(library(randomForest, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 suppressMessages(library(gbm, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 suppressMessages(library(plyr, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+suppressMessages(library(MASS, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+suppressMessages(library(tsne, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+suppressMessages(library(klaR, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+# We don't want warnings in the document
+options(warn=-1)
 ```
 
 ## 1. Problem Formulation
 
-TODO
+The task is to build a predictor that distinguish different types of human excercise using measurements from wearable sensors. A labeled dataset is provided.
+
+The rest of the paper is structured as follows:
+- Section 2 describes dataset, data acquisition and cleaning. It also describes the strategy for train/validation/test split and cross-validation strategy.
+- Section 3 contains evaluation of several models
+- Section 4 concludes the report. It makes final model choice and contains out-of-sample error estimation
+
+Setting the seed for reproduction purposes:
 ```{r}
 set.seed(16121984)
 ```
@@ -25,9 +38,8 @@ set.seed(16121984)
 CSV file for the task was loaded at the following time: `r date()`
 The data are loaded from CSV file in a following manner:
 ```{r}
-# TODO
-#download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
-#              destfile="pml-training.csv")
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+              destfile="pml-training.csv")
 xLabeled <- read.csv("pml-training.csv")
 ```
 The labeled data contain `r dim(xLabeled)[1]` labeled examples. The number of columns is `r dim(xLabeled)[2]` (`r dim(xLabeled)[2]-1` potential predictors and a class label).
@@ -65,11 +77,11 @@ barplot(table(xLabeled$classe)/length(xLabeled$classe)*100, xlab = "Excercise Ty
 
 The classes are not skewed (the percentages of each class are relatively close), so accuracy is acceptable success metrics.
 
-There are `r dim(xLabeled)[1]` labeled examples available. It is relatively large sample size, so we choose to use 60/20/20 training/testing/validation split. We split the data in a following manner:
-- 60% is randomly assigned to training set. It will be used to explore data and fit the models.
+There are `r dim(xLabeled)[1]` labeled examples available. It is relatively large sample size, so we choose to use 60/20/20 training/testing/validation split with 5-fold cross-validation for training control. We split the data in a following manner:
+- 60% is randomly assigned to training set. It will be used to explore data and fit the models. We use 5-fold cross validation to reduce the variance and still have manageble training time.
 - 20% is randomly assigned to testing set. Prediction accuracy on this set will be used to select the model and adjust model parameters if necessary.
 - Remaining 20% is assigned to validation set. Prediction accuracy on this set will be used to estimate out-of-sample error of the selected model.
-*NOTE:* Many sources call set for model selection "validation set" and set for final one-time estimation "testing set". Here we stick to the meaning proposed in Practical Machine Learning course.
+*NOTE:* Many sources call set for model selection "validation set" and set for final one-time estimation "testing set". In this course it is vice versa. Here we stick to the meanings proposed in Practical Machine Learning course.
 ```{r}
 dataPartitionTrain <- createDataPartition(xLabeled$classe, p = 0.6, list = F)
 xTrain <- xLabeled[dataPartitionTrain,]
@@ -78,86 +90,114 @@ xTestAndVal <- xLabeled[-dataPartitionTrain,]
 dataPartitionTestAndVal <- createDataPartition(xTestAndVal$classe, p = 0.5, list = F)
 xVal <- xTestAndVal[dataPartitionTestAndVal,]
 xTest <- xTestAndVal[-dataPartitionTestAndVal,]
+crossVal5Fold <- trainControl(method = "cv", number = 5)
 ```
+
+The data have too many dimensions for straightforward visualization. However, plotting first 2 PCA components can give an idea about the structure of the data.
+```{r}
+prCompTrain <- prcomp(xTrain[,-53])
+qplot(prCompTrain$x[,1], prCompTrain$x[,2], col = xTrain$classe, xlab = "Principal Component 1", ylab = "Principal Component 1", main = "Figure 2. First Principal Components vs Excercise Type") + guides(color=guide_legend(title="Excercise Class"))
+```
+
+There are no visible clusters corresponding to excercise. It gives a hint that problem is highly nonlinear.
 
 Now the data are ready for applying machine learning algorithms.
 
 ## 3. Model Selection
 
-<Evaluate several models>
+In the upcoming sections we are going to evaluate several models and use test set accuracy for model selection.
 
 ### 3.1. Naive Bayesian Model
 
-Naive Bayesian model relies on the assumption that distributions of predictor variables are independent given the class. For excercising this assumption is very likely to be inaccurate - within the same excercise movement of different parts of the body should have a lot of dependencies. However, still Naive Bayesian approach can be used as a benchmark to compare other models to.
+Naive Bayesian model relies on the assumption that distributions of predictor variables are independent given the class. For excercising this assumption is very likely to be inaccurate - within the same excercise movement of different parts of the body should have a lot of dependencies. Still Naive Bayesian approach can be used as a benchmark to compare with other models.
 
 ```{r}
-# Note: for some methods formula notation like "classe ~ ." slows down performance tremendously.
- naiveBayesianModel <- train(classe ~ ., data = xTrain, method = "nb", preProcess = c("center", "scale"))
-#naiveBayesianModel <- train(classe~., data = xTrain, method = "nb", preProcess = c("center", "scale")) #Takes 30+ minutes
-
-# Training set performance
-#naiveBayesianTrainResults <- predict(naiveBayesianModel, xTrain)
-#confusionMatrix(naiveBayesianTrainResults, xTrain$classe)
-#Acc: ?% 
-
-# Cross-validation TODO val/test
-#naiveBayesianCVResults <- predict(naiveBayesianModel, xCrossVal)
-#confusionMatrix(naiveBayesianCVResults, xCrossVal$classe)
-#Acc: ?% 
+# We are doing our own training/test/validation manually. Not using caret built-in training control and tuning
+# Otherwise it takes too much time to build model, and due to the numbers of examples it is quite clear that
+# Laplace smoothing is not necessary
+nbModel <- train(classe ~ ., data = xTrain, method = "nb", trControl = crossVal5Fold, tuneGrid=data.frame(fL=0, usekernel=F))
 ```
 
-### 3.2. Decision Trees
+Training set accuracy: `r round(confusionMatrix(predict(nbModel, xTrain), xTrain$classe)$overall[1]*100, digits=2)`%
 
-Decision tree is practically vary efficient method, although somewhat prone to overfitting. Instead of "rpart" implementation, proposed by the course, we are going to use more fast and robust J48 algorithm for decision tree construction.
+Testing  set accuracy: `r round(confusionMatrix(predict(nbModel, xTest), xTest$classe)$overall[1]*100, digits=2)`%
+
+The accuracy is low. It is just a benchmark model, and accuracy was not expected to be high anyway.
+
+### 3.2. Linear Discriminant Analysis
+
+Linear discriminant analysis (LDA) can be applied to that problem. However, LDA has an assumption that measurements for each excercise are normally distributed around some center. It is not realistic assumption, therefore, LDA is unlikely to produce good results.
 
 ```{r}
-decTreeModel <- train(classe~., data = xTrain, method = "J48")
-decTreeTrainResults <- predict(decTreeModel, xTrain)
-decTreeTestResults <- predict(decTreeModel, xTest)
+ldaModel <- train(classe ~ ., data = xTrain, method = "lda", trControl = crossVal5Fold)
 ```
-Training set accuracy: `r round(confusionMatrix(decTreeTrainResults, xTrain$classe)$overall[1]*100, digits=2)`%
 
-Testing  set accuracy: `r round(confusionMatrix(decTreeTestResults, xTest$classe)$overall[1]*100, digits=2)`%
+Training set accuracy: `r round(ldaModel$results[2]*100, digits=2)`%
 
-TODO Any adjustments? ROC curves, etc.?
+Testing  set accuracy: `r round(confusionMatrix(predict(ldaModel, xTest), xTest$classe)$overall[1]*100, digits=2)`%
 
-### 3.3. Random Forests
+The accuracy is still not high. But it is much better than random guessing, and therefore LDA models can later be boosted.
 
-Random forest is one of the most widely used models in practice. It is robust and definitely worth trying.
+### 3.3. Decision Trees
+
+Decision tree is practically very efficient method, although somewhat prone to overfitting. Instead of "rpart" implementation, proposed by the course, we are going to use more fast and robust J48 algorithm for decision tree construction.
 
 ```{r}
-# Caret's adjustment for random forests will take many hours.
-# We are doing our own training/test/validation manually. So, we do not use built-in one training control from caret
-randomForestModel <- train(classe ~ ., data = xTrain, method = "rf", trControl = trainControl(method = "none"), tuneGrid=data.frame(mtry=10))
-randomForestTrainResults <- predict(randomForestModel, xTrain)
-randomForestTestResults <- predict(randomForestModel, xTest)
+decTreeModel <- train(classe~., data = xTrain, method = "J48", trControl = crossVal5Fold)
 ```
-Training set accuracy: `r round(confusionMatrix(randomForestTrainResults, xTrain$classe)$overall[1]*100, digits=4)`%
 
-Testing  set accuracy: `r round(confusionMatrix(randomForestTestResults, xTest$classe)$overall[1]*100, digits=4)`%
+Training set accuracy: `r round(decTreeModel$results[2]*100, digits=2)`%
 
-TODO Use ROC curves or other mesurements?
+Testing  set accuracy: `r round(confusionMatrix(predict(decTreeModel, xTest), xTest$classe)$overall[1]*100, digits=2)`%
 
-### 3.4. Boosting with Trees
+Decision trees show very good accuracy.
 
-Boosting is a very popular and practical approach for combining the prediction methods. It is definitely worth trying for pretty much any task. Here decision trees and random forests has shown good results, .
+### 3.4. Random Forests
+
+Random forests are one of the most widely used models in practice. They are robust and definitely worth trying in this scenario.
 
 ```{r}
-# Does not work. To rework
-treeBoostModel <- train(classe ~ ., data = xTrain, method = "gbm")
-#treeBoostTrainResults <- predict(randomForestModel, xTrain)
-#treeBoostTestResults <- predict(randomForestModel, xTest)
+# Caret's automated adjustment for random forests will take many hours.
+# We are doing our own training/test/validation manually. We do not use caret built-in training control and tuning
+# Otherwise time to build random forest becomes unmanageable
+randomForestModel <- train(classe ~ ., data = xTrain, method = "rf", trControl = crossVal5Fold, tuneGrid=data.frame(mtry=10))
 ```
 
-### 3.4. TODO Logistic regression, SVM, some bagging/boosting
+Training set accuracy: `r round(randomForestModel$result[2]*100, digits=4)`%
 
-## 4. Model Selection
+Testing  set accuracy: `r round(confusionMatrix( predict(randomForestModel, xTest), xTest$classe)$overall[1]*100, digits=4)`%
 
-TODO Visualize somehow? E.g. TSNE
+Random forests show the best accuracy by far among the previously tested models. However, we should still watch out for overfit.
 
-## 5. Summary
+### 3.4. Boosting
 
-- The model was build using `r dim(xLabeled)[2]-1` predictor variables
+Boosting is a very popular and practical approach for combining the prediction methods. It is definitely worth trying for pretty much any task. Decision trees are freuqnt targets for boosting, and they produced one of the highest accuracy measurements for this task. There are many types of models that can be boosted, here we will just use decision trees as an example.
+
+```{r}
+lrBoostModel <- train(classe ~ ., data = xTrain, method = "gbm", trControl = crossVal5Fold, verbose = F)
+```
+
+Training set accuracy: `r round(confusionMatrix(predict(lrBoostModel, xTrain), xTrain$classe)$overall[1]*100, digits=4)`%
+
+Testing  set accuracy: `r round(confusionMatrix(predict(lrBoostModel, xTest), xTest$classe)$overall[1]*100, digits=4)`%
+
+## 4. Summary
+
+Based on test set performance, random forests were chosen as a final model. Out-of-sample error can be estimated using the validation set.
+
+Validation set accuracy: `r round(confusionMatrix(predict(randomForestModel, xVal), xVal$classe)$overall[1]*100, digits=4)`% *This is the estimation of out-of-sample error*
+
+The accuracy is about as high as training and test set accuracy. Therefore, there is no reason to suspect overfit.
+
+Model information can be summarized as follows:
+- The model was built using `r dim(xLabeled)[2]-1` predictor variables, trained over 60% of the dataset using 5-fold cross-validation.
+- The final model is a random forest model, built with 500 trees and 10 predictors sampled for splitting at each node.
+- The final model has `r round(confusionMatrix(predict(randomForestModel, xVal), xVal$classe)$overall[1]*100, digits=4)`% accuracy on the validation set, and its performance can also be visualized using the following confusion matrix:
+```{r}
+table(predict(randomForestModel, xVal), xVal$classe)
+```
+
+Prediction model is built and out-of-sample error is estimated. It completes the solution of the problem.
 
 ## Appendix. Reproduction information.
 
