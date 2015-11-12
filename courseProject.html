@@ -78,7 +78,7 @@ img {
 </div>
 <div id="data-acquisition-and-cleaning" class="section level2">
 <h2>2. Data Acquisition and Cleaning</h2>
-<p>CSV file for the task was loaded at the following time: Fri Nov 13 00:26:35 2015 The data are loaded from CSV file in a following manner:</p>
+<p>CSV file for the task was loaded at the following time: Fri Nov 13 00:42:00 2015 The data are loaded from CSV file in a following manner:</p>
 <pre class="r"><code>download.file(url = &quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;,
               destfile=&quot;pml-training.csv&quot;)
 xLabeled &lt;- read.csv(&quot;pml-training.csv&quot;)</code></pre>
@@ -132,7 +132,6 @@ qplot(prCompTrain$x[,1], prCompTrain$x[,2], col = xTrain$classe, xlab = &quot;Pr
 # Otherwise it takes too much time to build model, and due to the numbers of examples it is quite clear that
 # Laplace smoothing is not necessary
 nbModel &lt;- train(classe ~ ., data = xTrain, method = &quot;nb&quot;, trControl = crossVal5Fold, tuneGrid=data.frame(fL=0, usekernel=F))</code></pre>
-<pre><code>## Loading required package: klaR</code></pre>
 <p>Training set accuracy: 48.96%</p>
 <p>Testing set accuracy: 48.81%</p>
 <p>The accuracy is low. It is just a benchmark model, and accuracy was not expected to be high anyway.</p>
@@ -206,10 +205,10 @@ randomForestModel &lt;- train(classe ~ ., data = xTrain, method = &quot;rf&quot;
 ## [8] methods   base     
 ## 
 ## other attached packages:
-##  [1] klaR_0.6-12         tsne_0.1-2          MASS_7.3-43        
-##  [4] plyr_1.8.3          gbm_2.1.1           survival_2.38-3    
-##  [7] randomForest_4.6-12 RWeka_0.4-24        caret_6.0-58       
-## [10] ggplot2_1.0.1       lattice_0.20-33    
+##  [1] klaR_0.6-12         MASS_7.3-43         plyr_1.8.3         
+##  [4] gbm_2.1.1           survival_2.38-3     randomForest_4.6-12
+##  [7] RWeka_0.4-24        caret_6.0-58        ggplot2_1.0.1      
+## [10] lattice_0.20-33    
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] Rcpp_0.12.1        compiler_3.2.2     formatR_1.2.1     

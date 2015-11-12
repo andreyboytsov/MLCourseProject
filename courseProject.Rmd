@@ -13,7 +13,6 @@ suppressMessages(library(randomForest, warn.conflicts = FALSE, quietly=TRUE, ver
 suppressMessages(library(gbm, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 suppressMessages(library(plyr, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 suppressMessages(library(MASS, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
-suppressMessages(library(tsne, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 suppressMessages(library(klaR, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
 # We don't want warnings in the document
 options(warn=-1)
