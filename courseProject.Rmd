@@ -82,6 +82,8 @@ Now the data are ready for applying machine learning algorithms.
 
 ## 4. Summary
 
+- The model was build using `r dim(xLabeled)[2]-1` predictor variables
+
 ## Appendix. Reproduction information.
 
 The following additional information might be useful for reproduction:
