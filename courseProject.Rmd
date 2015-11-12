@@ -1,0 +1,90 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Andrey Boytsov"
+date: "11. November 2015"
+output: html_document
+---
+
+```{r, echo=FALSE, results='hide'}
+suppressMessages(library(caret, warn.conflicts = FALSE, quietly=TRUE, verbose = F))
+```
+
+## 1. Problem Formulation
+
+TODO
+```{r}
+set.seed(16121984)
+```
+
+## 2. Data Acquisition and Cleaning
+
+CSV file for the task was loaded at the following time: `r date()`
+The data are loaded from CSV file in a following manner:
+```{r}
+# TODO
+#download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+#              destfile="pml-training.csv")
+xLabeled <- read.csv("pml-training.csv")
+```
+The labeled data contain `r dim(xLabeled)[1]` labeled examples. The number of columns is `r dim(xLabeled)[2]` (`r dim(xLabeled)[2]-1` potential predictors and a class label).
+
+The following variables should not participate in the training. They do not influence excercise pattern, keeping them in the model can lead only to slowdown and overfits.
+
+- *raw_timestamp_part_1*, *raw_timestamp_part_2*, *cvtd_timestamp* - all timestamps.
+- *X* - sequential number of raw.
+- *new_window*, *num_window* - timeframes of different excercises.
+- *user_name* - name of tester. Unless the trained model will be used for the same users only, the username should not be taken into account when learning training patterns.
+```{r}
+columnsToDrop <-c("raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","X","user_name","new_window",
+                   "num_window");
+xLabeled <- xLabeled[, !(colnames(xLabeled) %in% columnsToDrop)]
+```
+
+Quick look at the data shows that some columns contain NAs and empty values. Consider the percentage of NAs and empty values by columns:
+```{r}
+table(c(round(do.call("cbind",lapply(xLabeled, function(x) (sum(is.na(x) | x=="")) / length(x))), digits = 2)))
+```
+
+So, 53 columns do not contain any NAs/empty values at all, while 100 columns contain about 98% of them. The latter 100 columns need to be dropped, they hardly ever contain any information and can cause problems for learning algorithms.
+
+Here we remove all columns that have over 95% of NA or empty values:
+```{r}
+cutoff_percentage <- 0.95
+xLabeled <- xLabeled[, lapply(xLabeled, function(x) (sum(is.na(x) | x=="")) / length(x)) < cutoff_percentage]
+```
+
+The number of predictors is now `r dim(xLabeled)[2]-1`. This is a relatively small number, it should not require any form of dimensionality reduction.
+
+The number of examples for each class is distributed as follows:
+```{r}
+barplot(table(xLabeled$classe)/length(xLabeled$classe)*100, xlab = "Excercise Type", ylab="Percentage", main = "Figure 1. Excercise Type Percentage", col = "red")
+```
+
+The classes are not skewed (the percentages of each class are relatively close), so accuracy is acceptable success metrics.
+
+There are `r dim(xLabeled)[1]` labeled examples available. It is relatively large sample size, so we choose to use 60/20/20 training/testing/validation split. We split the data in a following manner:
+- 60% is randomly assigned to training set. It will be used to explore data and fit the models.
+- 20% is randomly assigned to testing set. Prediction accuracy on this set will be used to select the model and adjust model parameters if necessary.
+- Remaining 20% is assigned to validation set. Prediction accuracy on this set will be used to estimate out-of-sample error of the selected model.
+```{r}
+dataPartitionTrain <- createDataPartition(xLabeled$classe, p = 0.6, list = F)
+xTrain <- xLabeled[dataPartitionTrain,]
+xTestAndVal <- xLabeled[-dataPartitionTrain,]
+# The rest 40% are divided 50/50 between test and vlaidation sets
+dataPartitionTestAndVal <- createDataPartition(xTestAndVal$classe, p = 0.5, list = F)
+xVal <- xTestAndVal[dataPartitionTestAndVal,]
+xTest <- xTestAndVal[-dataPartitionTestAndVal,]
+```
+
+Now the data are ready for applying machine learning algorithms.
+
+## 3. Model Selection
+
+## 4. Summary
+
+## Appendix. Reproduction information.
+
+The following additional information might be useful for reproduction:
+```{r}
+sessionInfo()
+```
