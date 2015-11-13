@@ -25,7 +25,8 @@ The task is to build a predictor that distinguish different types of human excer
 The rest of the paper is structured as follows:
 - Section 2 describes dataset, data acquisition and cleaning. It also describes the strategy for train/validation/test split and cross-validation strategy.
 - Section 3 contains evaluation of several models
-- Section 4 concludes the report. It makes final model choice and contains out-of-sample error estimation
+- Section 4 describes final model selection and contains out-of-sample error estimation
+- Section 5 concludes the report.
 
 Setting the seed for reproduction purposes:
 ```{r}
@@ -180,11 +181,21 @@ Training set accuracy: `r round(confusionMatrix(predict(lrBoostModel, xTrain), x
 
 Testing  set accuracy: `r round(confusionMatrix(predict(lrBoostModel, xTest), xTest$classe)$overall[1]*100, digits=4)`%
 
-## 4. Summary
+## 4. Model Selection
 
-Based on test set performance, random forests were chosen as a final model. Out-of-sample error can be estimated using the validation set.
+Random forests provided highest accuracy on test set. Therefore, random forests were chosen as a final model. Out-of-sample error can be estimated using the validation set.
 
-Validation set accuracy: `r round(confusionMatrix(predict(randomForestModel, xVal), xVal$classe)$overall[1]*100, digits=4)`% *This is the estimation of out-of-sample error*
+```{r}
+finalEstimation <- confusionMatrix(predict(randomForestModel, xVal), xVal$classe)
+finalAccuracy  <- finalEstimation$overall["Accuracy"]
+finalAccuracyLower95  <- finalEstimation$overall["AccuracyLower"]
+finalAccuracyHigher95  <- finalEstimation$overall["AccuracyUpper"]
+outOfSampleErroEstimation <- 1 - finalAccuracy
+outOfSampleHigher95 <- 1 - finalAccuracyLower95
+outOfSampleLower95 <- 1 - finalAccuracyHigher95
+```
+
+Validation set accuracy: `r round(finalAccuracy*100, digits=4)`% with 95% confidence intervals being [`r round(finalAccuracyLower95*100, digits=4)`,`r round(finalAccuracyHigher95*100, digits=4)`] %. Therefore, out-of-smaple error can be estimated as `r round(outOfSampleErroEstimation*100, digits=4)`% with 95% confidence intervals being [`r round(outOfSampleLower95*100, digits=4)`,`r round(outOfSampleHigher95*100, digits=4)`] %
 
 The accuracy is about as high as training and test set accuracy. Therefore, there is no reason to suspect overfit.
 
@@ -197,6 +208,15 @@ table(predict(randomForestModel, xVal), xVal$classe)
 ```
 
 Prediction model is built and out-of-sample error is estimated. It completes the solution of the problem.
+
+# 5. Summary
+
+In this work:
+
+- We built a machine learning algorithm to predict activity quality from activity monitors. The model of choice was a random forest wigth 500 trees and 10 predictors samples at each node. It was selected based on test set accuracy.
+- We expect out-of-sample error to be `r round(outOfSampleErroEstimation*100, digits=4)`% with 95% confidence intervals being [`r round(outOfSampleLower95*100, digits=4)`,`r round(outOfSampleHigher95*100, digits=4)`] %. Out-of-sample error was estimated using validation set accuracy.
+- Cross-validation was used to estimated confidence interval for out-of-sample error.
+- Random forests model was used to predict test cases from "pml-testing.csv". All cases were predicted accurately.
 
 ## Appendix. Reproduction information.
 

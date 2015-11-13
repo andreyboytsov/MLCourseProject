@@ -72,13 +72,13 @@ img {
 <div id="problem-formulation" class="section level2">
 <h2>1. Problem Formulation</h2>
 <p>The task is to build a predictor that distinguish different types of human excercise using measurements from wearable sensors. A labeled dataset is provided.</p>
-<p>The rest of the paper is structured as follows: - Section 2 describes dataset, data acquisition and cleaning. It also describes the strategy for train/validation/test split and cross-validation strategy. - Section 3 contains evaluation of several models - Section 4 concludes the report. It makes final model choice and contains out-of-sample error estimation</p>
+<p>The rest of the paper is structured as follows: - Section 2 describes dataset, data acquisition and cleaning. It also describes the strategy for train/validation/test split and cross-validation strategy. - Section 3 contains evaluation of several models - Section 4 describes final model selection and contains out-of-sample error estimation - Section 5 concludes the report.</p>
 <p>Setting the seed for reproduction purposes:</p>
 <pre class="r"><code>set.seed(16121984)</code></pre>
 </div>
 <div id="data-acquisition-and-cleaning" class="section level2">
 <h2>2. Data Acquisition and Cleaning</h2>
-<p>CSV file for the task was loaded at the following time: Fri Nov 13 00:42:00 2015 The data are loaded from CSV file in a following manner:</p>
+<p>CSV file for the task was loaded at the following time: Fri Nov 13 11:35:43 2015 The data are loaded from CSV file in a following manner:</p>
 <pre class="r"><code>download.file(url = &quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;,
               destfile=&quot;pml-training.csv&quot;)
 xLabeled &lt;- read.csv(&quot;pml-training.csv&quot;)</code></pre>
@@ -171,10 +171,17 @@ randomForestModel &lt;- train(classe ~ ., data = xTrain, method = &quot;rf&quot;
 <p>Testing set accuracy: 96.2274%</p>
 </div>
 </div>
-<div id="summary" class="section level2">
-<h2>4. Summary</h2>
-<p>Based on test set performance, random forests were chosen as a final model. Out-of-sample error can be estimated using the validation set.</p>
-<p>Validation set accuracy: 99.2608% <em>This is the estimation of out-of-sample error</em></p>
+<div id="model-selection-1" class="section level2">
+<h2>4. Model Selection</h2>
+<p>Random forests provided highest accuracy on test set. Therefore, random forests were chosen as a final model. Out-of-sample error can be estimated using the validation set.</p>
+<pre class="r"><code>finalEstimation &lt;- confusionMatrix(predict(randomForestModel, xVal), xVal$classe)
+finalAccuracy  &lt;- finalEstimation$overall[&quot;Accuracy&quot;]
+finalAccuracyLower95  &lt;- finalEstimation$overall[&quot;AccuracyLower&quot;]
+finalAccuracyHigher95  &lt;- finalEstimation$overall[&quot;AccuracyUpper&quot;]
+outOfSampleErroEstimation &lt;- 1 - finalAccuracy
+outOfSampleHigher95 &lt;- 1 - finalAccuracyLower95
+outOfSampleLower95 &lt;- 1 - finalAccuracyHigher95</code></pre>
+<p>Validation set accuracy: 99.2608% with 95% confidence intervals being [98.9401,99.5044] %. Therefore, out-of-smaple error can be estimated as 0.7392% with 95% confidence intervals being [0.4956,1.0599] %</p>
 <p>The accuracy is about as high as training and test set accuracy. Therefore, there is no reason to suspect overfit.</p>
 <p>Model information can be summarized as follows: - The model was built using 52 predictor variables, trained over 60% of the dataset using 5-fold cross-validation. - The final model is a random forest model, built with 500 trees and 10 predictors sampled for splitting at each node. - The final model has 99.2608% accuracy on the validation set, and its performance can also be visualized using the following confusion matrix:</p>
 <pre class="r"><code>table(predict(randomForestModel, xVal), xVal$classe)</code></pre>
@@ -187,6 +194,15 @@ randomForestModel &lt;- train(classe ~ ., data = xTrain, method = &quot;rf&quot;
 ##   E    0    0    0    0  718</code></pre>
 <p>Prediction model is built and out-of-sample error is estimated. It completes the solution of the problem.</p>
 </div>
+<div id="summary" class="section level1">
+<h1>5. Summary</h1>
+<p>In this work:</p>
+<ul>
+<li>We built a machine learning algorithm to predict activity quality from activity monitors. The model of choice was a random forest wigth 500 trees and 10 predictors samples at each node. It was selected based on test set accuracy.</li>
+<li>We expect out-of-sample error to be 0.7392% with 95% confidence intervals being [0.4956,1.0599] %. Out-of-sample error was estimated using validation set accuracy.</li>
+<li>Cross-validation was used to estimated confidence interval for out-of-sample error.</li>
+<li>Random forests model was used to predict test cases from “pml-testing.csv”. All cases were predicted accurately.</li>
+</ul>
 <div id="appendix.-reproduction-information." class="section level2">
 <h2>Appendix. Reproduction information.</h2>
 <p>The following additional information might be useful for reproduction:</p>
@@ -225,6 +241,7 @@ randomForestModel &lt;- train(classe ~ ., data = xTrain, method = &quot;rf&quot;
 ## [34] scales_0.3.0       codetools_0.2-14   htmltools_0.2.6   
 ## [37] pbkrtest_0.4-2     colorspace_1.2-6   labeling_0.3      
 ## [40] quantreg_5.19      stringi_1.0-1      munsell_0.4.2</code></pre>
+</div>
 </div>
 
 
