@@ -1,7 +1,7 @@
 ---
 title: "Practical Machine Learning - Course Project"
 author: "Andrey Boytsov"
-date: "11. November 2015"
+date: "14. November 2015"
 output: html_document
 ---
 
@@ -23,10 +23,11 @@ options(warn=-1)
 The task is to build a predictor that distinguish different types of human excercise using measurements from wearable sensors. A labeled dataset is provided.
 
 The rest of the paper is structured as follows:
+
 - Section 2 describes dataset, data acquisition and cleaning. It also describes the strategy for train/validation/test split and cross-validation strategy.
-- Section 3 contains evaluation of several models
+- Section 3 contains evaluation of several models using cross-validation
 - Section 4 describes final model selection and contains out-of-sample error estimation
-- Section 5 concludes the report.
+- Section 5 summarizes and concludes the report.
 
 Setting the seed for reproduction purposes:
 ```{r}
@@ -37,7 +38,7 @@ set.seed(16121984)
 
 CSV file for the task was loaded at the following time: `r date()`
 The data are loaded from CSV file in a following manner:
-```{r}
+```{r cache=TRUE}
 download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
               destfile="pml-training.csv")
 xLabeled <- read.csv("pml-training.csv")
@@ -77,26 +78,21 @@ barplot(table(xLabeled$classe)/length(xLabeled$classe)*100, xlab = "Excercise Ty
 
 The classes are not skewed (the percentages of each class are relatively close), so accuracy is acceptable success metrics.
 
-There are `r dim(xLabeled)[1]` labeled examples available. It is relatively large sample size, so we choose to use 60/20/20 training/testing/validation split with 5-fold cross-validation for training control. We split the data in a following manner:
-- 60% is randomly assigned to training set. It will be used to explore data and fit the models. We use 5-fold cross validation to reduce the variance and still have manageble training time.
-- 20% is randomly assigned to testing set. Prediction accuracy on this set will be used to select the model and adjust model parameters if necessary.
-- Remaining 20% is assigned to validation set. Prediction accuracy on this set will be used to estimate out-of-sample error of the selected model.
-*NOTE:* Many sources call set for model selection "validation set" and set for final one-time estimation "testing set". In this course it is vice versa. Here we stick to the meanings proposed in Practical Machine Learning course.
+There are `r dim(xLabeled)[1]` labeled examples available. Sample size is relatively large, and cross-validation is an explicit requirement for the task. Therefore, we can use the following protocol:
+
+- 80% of data will be used for training and model selection. We will use K-fold cross validation on this data in order to pick prediction function and compare different predictors. We choose K=4 in order to have "classic" 60/20/20 training/testing/validation split on every cross-validation step.
+- 20% of data are assigned to the test set. Selected model will be run only once on that set in order to estimate out-of-sample error. This test set will not be used in exploration, trainning and model selection in any way.
 ```{r}
-dataPartitionTrain <- createDataPartition(xLabeled$classe, p = 0.6, list = F)
+dataPartitionTrain <- createDataPartition(xLabeled$classe, p = 0.8, list = F)
 xTrain <- xLabeled[dataPartitionTrain,]
-xTestAndVal <- xLabeled[-dataPartitionTrain,]
-# The rest 40% are divided 50/50 between test and validation sets
-dataPartitionTestAndVal <- createDataPartition(xTestAndVal$classe, p = 0.5, list = F)
-xVal <- xTestAndVal[dataPartitionTestAndVal,]
-xTest <- xTestAndVal[-dataPartitionTestAndVal,]
-crossVal5Fold <- trainControl(method = "cv", number = 5)
+xTest <- xLabeled[-dataPartitionTrain,]
+crossVal4Fold <- trainControl(method = "cv", number = 4)
 ```
 
 The data have too many dimensions for straightforward visualization. However, plotting first 2 PCA components can give an idea about the structure of the data.
 ```{r}
 prCompTrain <- prcomp(xTrain[,-53])
-qplot(prCompTrain$x[,1], prCompTrain$x[,2], col = xTrain$classe, xlab = "Principal Component 1", ylab = "Principal Component 1", main = "Figure 2. First Principal Components vs Excercise Type") + guides(color=guide_legend(title="Excercise Class"))
+qplot(prCompTrain$x[,1], prCompTrain$x[,2], col = xTrain$classe, xlab = "Principal Component 1", ylab = "Principal Component 2", main = "Figure 2. First Principal Components vs Excercise Type") + guides(color=guide_legend(title="Excercise Class"))
 ```
 
 There are no visible clusters corresponding to excercise. It gives a hint that problem is highly nonlinear.
@@ -111,16 +107,15 @@ In the upcoming sections we are going to evaluate several models and use test se
 
 Naive Bayesian model relies on the assumption that distributions of predictor variables are independent given the class. For excercising this assumption is very likely to be inaccurate - within the same excercise movement of different parts of the body should have a lot of dependencies. Still Naive Bayesian approach can be used as a benchmark to compare with other models.
 
-```{r}
-# We are doing our own training/test/validation manually. Not using caret built-in training control and tuning
-# Otherwise it takes too much time to build model, and due to the numbers of examples it is quite clear that
-# Laplace smoothing is not necessary
-nbModel <- train(classe ~ ., data = xTrain, method = "nb", trControl = crossVal5Fold, tuneGrid=data.frame(fL=0, usekernel=F))
+```{r cache=TRUE}
+# Using our own tuning grid, or training time becomes unmanageable
+# Due to the numbers of examples it is quite clear that Laplace smoothing is not necessary
+nbModel <- train(classe ~ ., data = xTrain, method = "nb", trControl = crossVal4Fold, tuneGrid=data.frame(fL=0, usekernel=F))
 ```
 
-Training set accuracy: `r round(confusionMatrix(predict(nbModel, xTrain), xTrain$classe)$overall[1]*100, digits=2)`%
+For this and subsequent models we are going to use average cross-validation test set accuracy i.e. average accuracy on hold-out 1/4 of data used for testing at each cross-validation fold. This is a standard metrics of cross-validation performance. **This metrics will be used for model selection.**
 
-Testing  set accuracy: `r round(confusionMatrix(predict(nbModel, xTest), xTest$classe)$overall[1]*100, digits=2)`%
+Average CV training set accuracy: `r round(nbModel$result$Accuracy*100, digits=2)`%
 
 The accuracy is low. It is just a benchmark model, and accuracy was not expected to be high anyway.
 
@@ -128,65 +123,59 @@ The accuracy is low. It is just a benchmark model, and accuracy was not expected
 
 Linear discriminant analysis (LDA) can be applied to that problem. However, LDA has an assumption that measurements for each excercise are normally distributed around some center. It is not realistic assumption, therefore, LDA is unlikely to produce good results.
 
-```{r}
-ldaModel <- train(classe ~ ., data = xTrain, method = "lda", trControl = crossVal5Fold)
+```{r cache=TRUE}
+ldaModel <- train(classe ~ ., data = xTrain, method = "lda", trControl = crossVal4Fold)
 ```
 
-Training set accuracy: `r round(ldaModel$results[2]*100, digits=2)`%
+Average CV testing set accuracy: `r round(ldaModel$results$Accuracy*100, digits=2)`%
 
-Testing  set accuracy: `r round(confusionMatrix(predict(ldaModel, xTest), xTest$classe)$overall[1]*100, digits=2)`%
-
-The accuracy is still not high. But it is much better than random guessing, and therefore LDA models can later be boosted.
+The accuracy is still not high.
 
 ### 3.3. Decision Trees
 
 Decision tree is practically very efficient method, although somewhat prone to overfitting. Instead of "rpart" implementation, proposed by the course, we are going to use more fast and robust J48 algorithm for decision tree construction.
 
-```{r}
-decTreeModel <- train(classe~., data = xTrain, method = "J48", trControl = crossVal5Fold)
+```{r cache=TRUE}
+decTreeModel <- train(classe~., data = xTrain, method = "J48", trControl = crossVal4Fold)
 ```
 
-Training set accuracy: `r round(decTreeModel$results[2]*100, digits=2)`%
+Average CV testing set accuracy: `r round(decTreeModel$results$Accuracy*100, digits=2)`%
 
-Testing  set accuracy: `r round(confusionMatrix(predict(decTreeModel, xTest), xTest$classe)$overall[1]*100, digits=2)`%
-
-Decision trees show very good accuracy.
+Decision trees show much better accuracy than previously considered model.
 
 ### 3.4. Random Forests
 
 Random forests are one of the most widely used models in practice. They are robust and definitely worth trying in this scenario.
 
-```{r}
+```{r cache=TRUE}
 # Caret's automated adjustment for random forests will take many hours.
 # We are doing our own training/test/validation manually. We do not use caret built-in training control and tuning
 # Otherwise time to build random forest becomes unmanageable
-randomForestModel <- train(classe ~ ., data = xTrain, method = "rf", trControl = crossVal5Fold, tuneGrid=data.frame(mtry=10))
+randomForestModel <- train(classe ~ ., data = xTrain, method = "rf", trControl = crossVal4Fold, tuneGrid=data.frame(mtry=10))
 ```
 
-Training set accuracy: `r round(randomForestModel$result[2]*100, digits=4)`%
+Average CV testing set accuracy: `r round(randomForestModel$result$Accuracy*100, digits=2)`%
 
-Testing  set accuracy: `r round(confusionMatrix( predict(randomForestModel, xTest), xTest$classe)$overall[1]*100, digits=4)`%
-
-Random forests show the best accuracy by far among the previously tested models. However, we should still watch out for overfit.
+Random forests show the best accuracy by far among the previously tested models.
 
 ### 3.4. Boosting
 
-Boosting is a very popular and practical approach for combining the prediction methods. It is definitely worth trying for pretty much any task. Decision trees are freuqnt targets for boosting, and they produced one of the highest accuracy measurements for this task. There are many types of models that can be boosted, here we will just use decision trees as an example.
+Boosting is a very popular and practical approach for combining the prediction methods. It is definitely worth trying for pretty much any task. Decision trees are frequent targets for boosting, and they produced one of the highest accuracy measurements for this task. There are many types of models that can be boosted, here we will just use decision trees as an example.
 
-```{r}
-lrBoostModel <- train(classe ~ ., data = xTrain, method = "gbm", trControl = crossVal5Fold, verbose = F)
+```{r cache=TRUE}
+lrBoostModel <- train(classe ~ ., data = xTrain, method = "gbm", trControl = crossVal4Fold, verbose = F)
 ```
 
-Training set accuracy: `r round(confusionMatrix(predict(lrBoostModel, xTrain), xTrain$classe)$overall[1]*100, digits=4)`%
+Average CV testing set accuracy: `r round(getTrainPerf(lrBoostModel)$TrainAccuracy*100, digits=2) #getTrainPerf for cross-val gives avg performance of hold-out set, i.e. test performace. That's what we need`%
 
-Testing  set accuracy: `r round(confusionMatrix(predict(lrBoostModel, xTest), xTest$classe)$overall[1]*100, digits=4)`%
+The accuracy is very good. However, it is lower than for random forests.
 
 ## 4. Model Selection
 
-Random forests provided highest accuracy on test set. Therefore, random forests were chosen as a final model. Out-of-sample error can be estimated using the validation set.
+Random forests provided highest accuracy averaged over cross-validation test sets. Therefore, random forests were chosen as a final model. Out-of-sample error can be estimated using the 20% test set, set aside initially from the dataset.
 
 ```{r}
-finalEstimation <- confusionMatrix(predict(randomForestModel, xVal), xVal$classe)
+finalEstimation <- confusionMatrix(predict(randomForestModel, xTest), xTest$classe)
 finalAccuracy  <- finalEstimation$overall["Accuracy"]
 finalAccuracyLower95  <- finalEstimation$overall["AccuracyLower"]
 finalAccuracyHigher95  <- finalEstimation$overall["AccuracyUpper"]
@@ -195,16 +184,16 @@ outOfSampleHigher95 <- 1 - finalAccuracyLower95
 outOfSampleLower95 <- 1 - finalAccuracyHigher95
 ```
 
-Validation set accuracy: `r round(finalAccuracy*100, digits=4)`% with 95% confidence intervals being [`r round(finalAccuracyLower95*100, digits=4)`,`r round(finalAccuracyHigher95*100, digits=4)`] %. Therefore, out-of-smaple error can be estimated as `r round(outOfSampleErroEstimation*100, digits=4)`% with 95% confidence intervals being [`r round(outOfSampleLower95*100, digits=4)`,`r round(outOfSampleHigher95*100, digits=4)`] %
+Test set accuracy: `r round(finalAccuracy*100, digits=2)`% with 95% confidence intervals being [`r round(finalAccuracyLower95*100, digits=2)`,`r round(finalAccuracyHigher95*100, digits=2)`] %. Therefore, out-of-sample error can be estimated as 1-accuracy = `r round(outOfSampleErroEstimation*100, digits=2)`% with 95% confidence intervals being [`r round(outOfSampleLower95*100, digits=2)`,`r round(outOfSampleHigher95*100, digits=2)`] %
 
-The accuracy is about as high as training and test set accuracy. Therefore, there is no reason to suspect overfit.
+The accuracy is about as high as cross-validation hold-out set accuracy (used for model selection). Therefore, there is no reason to suspect overfit.
 
 Model information can be summarized as follows:
-- The model was built using `r dim(xLabeled)[2]-1` predictor variables, trained over 60% of the dataset using 5-fold cross-validation.
+- The model was built using `r dim(xLabeled)[2]-1` predictor variables. Cross-validation on 80% of the data was used for training and model selection.
 - The final model is a random forest model, built with 500 trees and 10 predictors sampled for splitting at each node.
-- The final model has `r round(confusionMatrix(predict(randomForestModel, xVal), xVal$classe)$overall[1]*100, digits=4)`% accuracy on the validation set, and its performance can also be visualized using the following confusion matrix:
+- The final model has `r round(finalAccuracy*100, digits=2)`% accuracy on the test set, and its performance can also be visualized using the following confusion matrix:
 ```{r}
-table(predict(randomForestModel, xVal), xVal$classe)
+table(predict(randomForestModel, xTest), xTest$classe)
 ```
 
 Prediction model is built and out-of-sample error is estimated. It completes the solution of the problem.
@@ -214,8 +203,8 @@ Prediction model is built and out-of-sample error is estimated. It completes the
 In this work:
 
 - We built a machine learning algorithm to predict activity quality from activity monitors. The model of choice was a random forest wigth 500 trees and 10 predictors samples at each node. It was selected based on test set accuracy.
-- We expect out-of-sample error to be `r round(outOfSampleErroEstimation*100, digits=4)`% with 95% confidence intervals being [`r round(outOfSampleLower95*100, digits=4)`,`r round(outOfSampleHigher95*100, digits=4)`] %. Out-of-sample error was estimated using validation set accuracy.
-- Cross-validation was used to estimated confidence interval for out-of-sample error.
+- We estimate out-of-sample error as `r round(outOfSampleErroEstimation*100, digits=2)`% with 95% confidence intervals being [`r round(outOfSampleLower95*100, digits=2)`,`r round(outOfSampleHigher95*100, digits=2)`] %. Out-of-sample error was estimated as 1 - test set accuracy. If our dataset is unbiased sample of real distribution (assumed by the task), if 20% were sampled randomly (ensured by caret), and if the model was not fine-tuned to this data in any way (ensured by our training/testing/data exploration protocols), then the error on test set should be unbiased estimation of out-of-sample error.
+- Cross-validation was used for training and model selection. Results of cross-validation were applied to separate test set to estimate out-of-sample error
 - Random forests model was used to predict test cases from "pml-testing.csv". All cases were predicted accurately.
 
 ## Appendix. Reproduction information.
